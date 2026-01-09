@@ -1,10 +1,14 @@
 // Server-side API route for fetching aircraft tracking data
-// Uses OpenSky Network API - FREE, no authentication required for basic queries
+// Uses OpenSky Network API - FREE, authentication optional but recommended for cloud deployments
 
 import { NextRequest, NextResponse } from "next/server";
 
 // Force dynamic rendering - don't call external APIs at build time
 export const dynamic = "force-dynamic";
+
+// OpenSky credentials (optional but recommended for Vercel/cloud deployments)
+const OPENSKY_USERNAME = process.env.OPENSKY_USERNAME;
+const OPENSKY_PASSWORD = process.env.OPENSKY_PASSWORD;
 
 // ===========================================
 // Types
@@ -214,27 +218,69 @@ export async function GET(request: NextRequest) {
       url += `?${queryString}`;
     }
 
+    // Build headers with optional authentication
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "User-Agent": "Observatory Dashboard/1.0",
+    };
+
+    // Add Basic Auth if credentials are available
+    if (OPENSKY_USERNAME && OPENSKY_PASSWORD) {
+      const credentials = Buffer.from(
+        `${OPENSKY_USERNAME}:${OPENSKY_PASSWORD}`,
+      ).toString("base64");
+      headers["Authorization"] = `Basic ${credentials}`;
+    }
+
     const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Observatory Dashboard/1.0",
-      },
-      next: { revalidate: 300 }, // Cache for 1 minute
+      headers,
+      next: { revalidate: 60 }, // Cache for 1 minute
     });
 
     if (!response.ok) {
-      // OpenSky might rate limit - return cached/empty data gracefully
+      // OpenSky might rate limit or block cloud IPs - return gracefully
       if (response.status === 429) {
         return NextResponse.json(
           {
-            error: "Rate limited by OpenSky Network",
+            error: "Rate limited by OpenSky Network. Try again later.",
             aircraft: [],
             stats: null,
+            hint: "Consider adding OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables for higher rate limits.",
           },
           { status: 429 },
         );
       }
-      throw new Error(`OpenSky API error: ${response.status}`);
+      if (response.status === 401) {
+        return NextResponse.json(
+          {
+            error: "OpenSky authentication failed",
+            aircraft: [],
+            stats: null,
+            hint: "Check your OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables.",
+          },
+          { status: 401 },
+        );
+      }
+      if (response.status === 403) {
+        return NextResponse.json(
+          {
+            error: "OpenSky blocked request (common for cloud provider IPs)",
+            aircraft: [],
+            stats: null,
+            hint: "Add OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables. Register free at https://opensky-network.org/",
+          },
+          { status: 403 },
+        );
+      }
+      console.error(`OpenSky API error: ${response.status} - ${response.statusText}`);
+      return NextResponse.json(
+        {
+          error: `OpenSky API error: ${response.status}`,
+          aircraft: [],
+          stats: null,
+        },
+        { status: response.status },
+      );
     }
 
     const data: OpenSkyResponse = await response.json();
@@ -312,9 +358,18 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Aviation API error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to fetch aircraft data", aircraft: [], stats: null },
+      {
+        error: "Failed to fetch aircraft data",
+        details: errorMessage,
+        aircraft: [],
+        stats: null,
+        hint: "If running on Vercel, add OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables.",
+      },
       { status: 500 },
     );
   }
+</newtml>
+
 }
