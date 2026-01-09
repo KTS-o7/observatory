@@ -3,6 +3,26 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+// Timeout helper for fetch requests
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 10000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Force dynamic rendering - don't call external APIs at build time
 export const dynamic = "force-dynamic";
 
@@ -126,17 +146,21 @@ async function getAccessToken(): Promise<string | null> {
     const tokenUrl =
       "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 
-    const response = await fetch(tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+    const response = await fetchWithTimeout(
+      tokenUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: OPENSKY_CLIENT_ID,
+          client_secret: OPENSKY_CLIENT_SECRET,
+        }),
       },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: OPENSKY_CLIENT_ID,
-        client_secret: OPENSKY_CLIENT_SECRET,
-      }),
-    });
+      8000, // 8 second timeout for token request
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -157,7 +181,11 @@ async function getAccessToken(): Promise<string | null> {
 
     return data.access_token;
   } catch (error) {
-    console.error("Error getting OpenSky access token:", error);
+    if (error instanceof Error && error.name === "AbortError") {
+      console.error("OpenSky token request timed out");
+    } else {
+      console.error("Error getting OpenSky access token:", error);
+    }
     return null;
   }
 }
@@ -303,10 +331,14 @@ export async function GET(request: NextRequest) {
       headers["Authorization"] = `Bearer ${accessToken}`;
     }
 
-    const response = await fetch(url, {
-      headers,
-      next: { revalidate: 60 }, // Cache for 1 minute
-    });
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers,
+        next: { revalidate: 60 }, // Cache for 1 minute
+      },
+      15000, // 15 second timeout for aircraft data
+    );
 
     if (!response.ok) {
       // OpenSky might rate limit or block cloud IPs
@@ -430,12 +462,18 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Aviation API error:", error);
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    const errorMessage = isTimeout
+      ? "Request timed out"
+      : error instanceof Error
+        ? error.message
+        : "Unknown error";
     const errorStack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
       {
-        error: "Failed to fetch aircraft data",
+        error: isTimeout
+          ? "OpenSky API request timed out"
+          : "Failed to fetch aircraft data",
         details: errorMessage,
         stack: process.env.NODE_ENV === "development" ? errorStack : undefined,
         aircraft: [],
@@ -445,7 +483,7 @@ export async function GET(request: NextRequest) {
           hasClientSecret: !!OPENSKY_CLIENT_SECRET,
         },
       },
-      { status: 500 },
+      { status: isTimeout ? 504 : 500 },
     );
   }
 }
