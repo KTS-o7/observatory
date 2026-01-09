@@ -3,11 +3,8 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   images: {
-    domains: ['api.mapbox.com'],
+    domains: ["api.mapbox.com"],
   },
-  experimental: {
-    optimizeCss: true,
-  },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
