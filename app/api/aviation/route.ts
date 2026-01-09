@@ -272,7 +272,9 @@ export async function GET(request: NextRequest) {
           { status: 403 },
         );
       }
-      console.error(`OpenSky API error: ${response.status} - ${response.statusText}`);
+      console.error(
+        `OpenSky API error: ${response.status} - ${response.statusText}`,
+      );
       return NextResponse.json(
         {
           error: `OpenSky API error: ${response.status}`,
@@ -358,7 +360,8 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Aviation API error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
       {
         error: "Failed to fetch aircraft data",
@@ -370,6 +373,4 @@ export async function GET(request: NextRequest) {
       { status: 500 },
     );
   }
-</newtml>
-
 }
