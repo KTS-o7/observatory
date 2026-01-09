@@ -3,6 +3,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+// Force dynamic rendering - don't call external APIs at build time
+export const dynamic = "force-dynamic";
+
 // ===========================================
 // Types
 // ===========================================
@@ -40,12 +43,46 @@ interface AircraftStats {
 
 // Military callsign prefixes
 const MILITARY_PREFIXES = [
-  "RCH", "RRR", "CNV", "NAVY", "USAF", "ARMY", "EVAC", "DUKE",
-  "KING", "PEDRO", "JOLLY", "FORTE", "JAKE", "TOPCAT", "HAWK",
-  "VIPER", "COBRA", "ROMAN", "RAIDER", "CODY", "DUSTOFF", "RAF",
-  "ASCOT", "NATO", "MMF", "GAF", "IAF", "SNTRY", "AWACS", "IRON",
-  "BOMBER", "TANKER", "GIANT", "REACH", "NCHO", "PLF", "CASA",
-  "IAM", "BAF", "RNL",
+  "RCH",
+  "RRR",
+  "CNV",
+  "NAVY",
+  "USAF",
+  "ARMY",
+  "EVAC",
+  "DUKE",
+  "KING",
+  "PEDRO",
+  "JOLLY",
+  "FORTE",
+  "JAKE",
+  "TOPCAT",
+  "HAWK",
+  "VIPER",
+  "COBRA",
+  "ROMAN",
+  "RAIDER",
+  "CODY",
+  "DUSTOFF",
+  "RAF",
+  "ASCOT",
+  "NATO",
+  "MMF",
+  "GAF",
+  "IAF",
+  "SNTRY",
+  "AWACS",
+  "IRON",
+  "BOMBER",
+  "TANKER",
+  "GIANT",
+  "REACH",
+  "NCHO",
+  "PLF",
+  "CASA",
+  "IAM",
+  "BAF",
+  "RNL",
 ];
 
 // ===========================================
@@ -55,10 +92,14 @@ const MILITARY_PREFIXES = [
 function isMilitaryCallsign(callsign: string | null): boolean {
   if (!callsign) return false;
   const cs = callsign.trim().toUpperCase();
-  return MILITARY_PREFIXES.some((prefix) => cs.startsWith(prefix) || cs.includes(prefix));
+  return MILITARY_PREFIXES.some(
+    (prefix) => cs.startsWith(prefix) || cs.includes(prefix),
+  );
 }
 
-function transformAircraftState(state: (string | number | boolean | null)[]): Aircraft {
+function transformAircraftState(
+  state: (string | number | boolean | null)[],
+): Aircraft {
   return {
     icao24: state[0] as string,
     callsign: state[1] as string | null,
@@ -106,7 +147,11 @@ function computeStats(aircraft: Aircraft[]): AircraftStats {
       stats.inFlight++;
     }
 
-    if (isMilitaryCallsign(ac.callsign) || ac.category === 7 || ac.category === 14) {
+    if (
+      isMilitaryCallsign(ac.callsign) ||
+      ac.category === 7 ||
+      ac.category === 14
+    ) {
       stats.military++;
     }
 
@@ -114,7 +159,8 @@ function computeStats(aircraft: Aircraft[]): AircraftStats {
       stats.highAltitude++;
     }
 
-    stats.byCountry[ac.originCountry] = (stats.byCountry[ac.originCountry] || 0) + 1;
+    stats.byCountry[ac.originCountry] =
+      (stats.byCountry[ac.originCountry] || 0) + 1;
   }
 
   return stats;
@@ -124,7 +170,10 @@ function computeStats(aircraft: Aircraft[]): AircraftStats {
 // Region Definitions
 // ===========================================
 
-const REGIONS: Record<string, { minLat: number; maxLat: number; minLon: number; maxLon: number }> = {
+const REGIONS: Record<
+  string,
+  { minLat: number; maxLat: number; minLon: number; maxLon: number }
+> = {
   europe: { minLat: 35, maxLat: 72, minLon: -10, maxLon: 40 },
   middle_east: { minLat: 12, maxLat: 42, minLon: 25, maxLon: 75 },
   asia_pacific: { minLat: -10, maxLat: 55, minLon: 100, maxLon: 180 },
@@ -177,8 +226,12 @@ export async function GET(request: NextRequest) {
       // OpenSky might rate limit - return cached/empty data gracefully
       if (response.status === 429) {
         return NextResponse.json(
-          { error: "Rate limited by OpenSky Network", aircraft: [], stats: null },
-          { status: 429 }
+          {
+            error: "Rate limited by OpenSky Network",
+            aircraft: [],
+            stats: null,
+          },
+          { status: 429 },
         );
       }
       throw new Error(`OpenSky API error: ${response.status}`);
@@ -214,7 +267,7 @@ export async function GET(request: NextRequest) {
           isMilitaryCallsign(ac.callsign) ||
           ac.category === 7 || // High performance
           ac.category === 14 || // UAV
-          (ac.geoAltitude && ac.geoAltitude > 15000) // Very high altitude
+          (ac.geoAltitude && ac.geoAltitude > 15000), // Very high altitude
       );
     }
 
@@ -242,7 +295,10 @@ export async function GET(request: NextRequest) {
       onGround: ac.onGround,
       squawk: ac.squawk,
       category: ac.category,
-      isMilitary: isMilitaryCallsign(ac.callsign) || ac.category === 7 || ac.category === 14,
+      isMilitary:
+        isMilitaryCallsign(ac.callsign) ||
+        ac.category === 7 ||
+        ac.category === 14,
       lastContact: ac.lastContact,
     }));
 
@@ -258,7 +314,7 @@ export async function GET(request: NextRequest) {
     console.error("Aviation API error:", error);
     return NextResponse.json(
       { error: "Failed to fetch aircraft data", aircraft: [], stats: null },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -3,6 +3,9 @@
 
 import { NextResponse } from "next/server";
 
+// Force dynamic rendering - don't call external APIs at build time
+export const dynamic = "force-dynamic";
+
 // ===========================================
 // Types
 // ===========================================
@@ -66,7 +69,7 @@ async function fetchURLhaus(limit: number = 50): Promise<CyberThreat[]> {
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 900 }, // Cache for 5 minutes
-      }
+      },
     );
 
     if (!response.ok) {
@@ -110,7 +113,7 @@ async function fetchRansomware(limit: number = 30): Promise<CyberThreat[]> {
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 900 },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -125,13 +128,14 @@ async function fetchRansomware(limit: number = 30): Promise<CyberThreat[]> {
       type: "ransomware" as const,
       severity: "critical" as const,
       title: `Ransomware: ${victim.group_name} claims ${victim.post_title}`,
-      description: `Ransomware group ${victim.group_name} has listed ${victim.post_title} as a victim. ${victim.activity ? `Sector: ${victim.activity}` : ""} ${victim.country ? `Country: ${victim.country}` : ""}`.trim(),
+      description:
+        `Ransomware group ${victim.group_name} has listed ${victim.post_title} as a victim. ${victim.activity ? `Sector: ${victim.activity}` : ""} ${victim.country ? `Country: ${victim.country}` : ""}`.trim(),
       indicator: victim.post_title,
       indicatorType: "organization",
       source: "Ransomware.live",
       timestamp: victim.discovered,
       tags: [victim.group_name, victim.activity, victim.country].filter(
-        Boolean
+        Boolean,
       ) as string[],
       metadata: {
         group: victim.group_name,
@@ -153,7 +157,7 @@ async function fetchFeodoTracker(): Promise<CyberThreat[]> {
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 900 },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -195,7 +199,11 @@ async function fetchFeodoTracker(): Promise<CyberThreat[]> {
 
 interface CyberStats {
   malwareUrls: { total: number; online: number };
-  ransomware: { total: number; last24h: number; byGroup: Record<string, number> };
+  ransomware: {
+    total: number;
+    last24h: number;
+    byGroup: Record<string, number>;
+  };
   botnets: { total: number; online: number; byMalware: Record<string, number> };
 }
 
@@ -264,7 +272,8 @@ export async function GET() {
     };
 
     allThreats.sort((a, b) => {
-      const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
+      const severityDiff =
+        severityOrder[a.severity] - severityOrder[b.severity];
       if (severityDiff !== 0) return severityDiff;
       return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });
@@ -286,7 +295,7 @@ export async function GET() {
     console.error("Cyber API error:", error);
     return NextResponse.json(
       { error: "Failed to fetch cyber threat data", threats: [], stats: null },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

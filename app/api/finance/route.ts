@@ -3,6 +3,9 @@
 
 import { NextResponse } from "next/server";
 
+// Force dynamic rendering - don't call external APIs at build time
+export const dynamic = "force-dynamic";
+
 // ===========================================
 // Types
 // ===========================================
@@ -212,7 +215,7 @@ async function fetchMarketIndices(): Promise<MarketIndex[]> {
         return { ...quote, name };
       }
       return null;
-    })
+    }),
   );
 
   return results.filter((r): r is MarketIndex => r !== null);
@@ -233,7 +236,7 @@ async function fetchCommodities(): Promise<MarketIndex[]> {
         return { ...quote, name };
       }
       return null;
-    })
+    }),
   );
 
   return results.filter((r): r is MarketIndex => r !== null);
@@ -386,7 +389,7 @@ export async function GET() {
         exchangeRates: [],
         alerts: [],
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

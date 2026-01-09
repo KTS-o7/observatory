@@ -3,6 +3,9 @@
 
 import { NextResponse } from "next/server";
 
+// Force dynamic rendering - don't call external APIs at build time
+export const dynamic = "force-dynamic";
+
 // ===========================================
 // Types
 // ===========================================
@@ -38,7 +41,12 @@ interface SolarFlare {
 
 interface SpaceWeatherAlert {
   id: string;
-  type: "geomagnetic" | "solar_radiation" | "radio_blackout" | "cme" | "solar_flare";
+  type:
+    | "geomagnetic"
+    | "solar_radiation"
+    | "radio_blackout"
+    | "cme"
+    | "solar_flare";
   severity: "low" | "medium" | "high" | "critical";
   title: string;
   description: string;
@@ -147,7 +155,11 @@ function inferAlertType(message: string): SpaceWeatherAlert["type"] {
     return "geomagnetic";
   }
 
-  if (lower.includes("solar radiation") || lower.includes("proton") || /s[1-5]/.test(lower)) {
+  if (
+    lower.includes("solar radiation") ||
+    lower.includes("proton") ||
+    /s[1-5]/.test(lower)
+  ) {
     return "solar_radiation";
   }
 
@@ -209,7 +221,7 @@ async function fetchKpIndex(): Promise<KpIndex[]> {
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 300 }, // Cache for 5 minutes
-      }
+      },
     );
 
     if (!response.ok) {
@@ -221,7 +233,8 @@ async function fetchKpIndex(): Promise<KpIndex[]> {
 
     // Skip header row
     return data.slice(1).map((row) => {
-      const kp = typeof row[1] === "number" ? row[1] : parseFloat(String(row[1]));
+      const kp =
+        typeof row[1] === "number" ? row[1] : parseFloat(String(row[1]));
       return {
         timestamp: row[0] as string,
         kpValue: kp,
@@ -242,7 +255,7 @@ async function fetchSolarWind(): Promise<SolarWind[]> {
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 300 },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -278,7 +291,7 @@ async function fetchCurrentScales(): Promise<{
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 300 },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -308,7 +321,7 @@ async function fetchSWPCAlerts(): Promise<SpaceWeatherAlert[]> {
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 300 },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -344,7 +357,7 @@ async function fetchSolarFlares(): Promise<SolarFlare[]> {
       {
         headers: { Accept: "application/json" },
         next: { revalidate: 300 },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -368,7 +381,9 @@ async function fetchSolarFlares(): Promise<SolarFlare[]> {
       classType: flare.max_class || flare.current_class || "Unknown",
       sourceLocation: null,
       activeRegion: null,
-      intensity: getFlareIntensity(flare.max_class || flare.current_class || ""),
+      intensity: getFlareIntensity(
+        flare.max_class || flare.current_class || "",
+      ),
     }));
   } catch (error) {
     console.error("SWPC solar flares error:", error);
@@ -394,7 +409,8 @@ async function getSpaceWeatherSummary(): Promise<SpaceWeatherSummary | null> {
     }
 
     const currentKp = kpData.length > 0 ? kpData[kpData.length - 1].kpValue : 0;
-    const latestWind = solarWind.length > 0 ? solarWind[solarWind.length - 1] : null;
+    const latestWind =
+      solarWind.length > 0 ? solarWind[solarWind.length - 1] : null;
 
     return {
       timestamp: new Date().toISOString(),
@@ -431,39 +447,52 @@ async function getSpaceWeatherSummary(): Promise<SpaceWeatherSummary | null> {
 export async function GET() {
   try {
     // Fetch all space weather data in parallel
-    const [summary, alerts, flares, kpHistory, solarWindHistory] = await Promise.all([
-      getSpaceWeatherSummary(),
-      fetchSWPCAlerts(),
-      fetchSolarFlares(),
-      fetchKpIndex(),
-      fetchSolarWind(),
-    ]);
+    const [summary, alerts, flares, kpHistory, solarWindHistory] =
+      await Promise.all([
+        getSpaceWeatherSummary(),
+        fetchSWPCAlerts(),
+        fetchSolarFlares(),
+        fetchKpIndex(),
+        fetchSolarWind(),
+      ]);
 
     // Add significant solar flares as alerts
     const significantFlares = flares.filter(
-      (f) => f.classType.startsWith("M") || f.classType.startsWith("X")
+      (f) => f.classType.startsWith("M") || f.classType.startsWith("X"),
     );
 
-    const flareAlerts: SpaceWeatherAlert[] = significantFlares.slice(0, 5).map((flare) => ({
-      id: flare.id,
-      type: "solar_flare",
-      severity: flare.classType.startsWith("X") ? "critical" : "high",
-      title: `Solar Flare: ${flare.classType}`,
-      description: `${flare.classType} class solar flare detected. Peak time: ${flare.peakTime || "Unknown"}.`,
-      issueTime: flare.beginTime,
-      impacts: flare.classType.startsWith("X")
-        ? ["HF Radio Communication", "GPS/Navigation Systems", "Satellite Operations"]
-        : ["Minor HF radio degradation"],
-      source: "NOAA SWPC",
-    }));
+    const flareAlerts: SpaceWeatherAlert[] = significantFlares
+      .slice(0, 5)
+      .map((flare) => ({
+        id: flare.id,
+        type: "solar_flare",
+        severity: flare.classType.startsWith("X") ? "critical" : "high",
+        title: `Solar Flare: ${flare.classType}`,
+        description: `${flare.classType} class solar flare detected. Peak time: ${flare.peakTime || "Unknown"}.`,
+        issueTime: flare.beginTime,
+        impacts: flare.classType.startsWith("X")
+          ? [
+              "HF Radio Communication",
+              "GPS/Navigation Systems",
+              "Satellite Operations",
+            ]
+          : ["Minor HF radio degradation"],
+        source: "NOAA SWPC",
+      }));
 
     // Combine all alerts
     const allAlerts = [...alerts, ...flareAlerts];
 
     // Sort by severity
-    const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    const severityOrder: Record<string, number> = {
+      critical: 0,
+      high: 1,
+      medium: 2,
+      low: 3,
+    };
     allAlerts.sort((a, b) => {
-      const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
+      const severityDiff =
+        severityOrder[a.severity] - severityOrder[b.severity];
       if (severityDiff !== 0) return severityDiff;
       return new Date(b.issueTime).getTime() - new Date(a.issueTime).getTime();
     });
@@ -513,8 +542,11 @@ export async function GET() {
       },
       stats: {
         activeAlerts: allAlerts.length,
-        criticalAlerts: allAlerts.filter((a) => a.severity === "critical").length,
-        recentFlares: flares.filter((f) => f.classType.startsWith("M") || f.classType.startsWith("X")).length,
+        criticalAlerts: allAlerts.filter((a) => a.severity === "critical")
+          .length,
+        recentFlares: flares.filter(
+          (f) => f.classType.startsWith("M") || f.classType.startsWith("X"),
+        ).length,
       },
       lastUpdated: new Date().toISOString(),
     });
@@ -530,7 +562,7 @@ export async function GET() {
         solarWind: null,
         stats: null,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -3,6 +3,9 @@
 
 import { NextResponse } from "next/server";
 
+// Force dynamic rendering - don't call external APIs at build time
+export const dynamic = "force-dynamic";
+
 // ===========================================
 // Timeout Utility
 // ===========================================

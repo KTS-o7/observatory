@@ -3,6 +3,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+// Force dynamic rendering - don't call external APIs at build time
+export const dynamic = "force-dynamic";
+
 // Allowed API domains for security
 const ALLOWED_DOMAINS = [
   // Original sources
