@@ -105,14 +105,22 @@ const MILITARY_PREFIXES = [
 async function getAccessToken(): Promise<string | null> {
   // Check if we have a valid cached token (with 60 second buffer)
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60000) {
+    console.log("Using cached OpenSky token");
     return cachedToken.token;
   }
 
   // No credentials configured
   if (!OPENSKY_CLIENT_ID || !OPENSKY_CLIENT_SECRET) {
-    console.log("OpenSky OAuth2 credentials not configured");
+    console.error(
+      "OpenSky OAuth2 credentials not configured. OPENSKY_CLIENT_ID:",
+      OPENSKY_CLIENT_ID ? "set" : "missing",
+      "OPENSKY_CLIENT_SECRET:",
+      OPENSKY_CLIENT_SECRET ? "set" : "missing",
+    );
     return null;
   }
+
+  console.log("Requesting new OpenSky OAuth2 token...");
 
   try {
     const tokenUrl =
@@ -131,11 +139,15 @@ async function getAccessToken(): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.error(`Failed to get OpenSky token: ${response.status}`);
+      const errorText = await response.text();
+      console.error(
+        `Failed to get OpenSky token: ${response.status} - ${errorText}`,
+      );
       return null;
     }
 
     const data: TokenResponse = await response.json();
+    console.log("Successfully obtained OpenSky OAuth2 token");
 
     // Cache the token (expires_in is in seconds)
     cachedToken = {
@@ -420,12 +432,18 @@ export async function GET(request: NextRequest) {
     console.error("Aviation API error:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
       {
         error: "Failed to fetch aircraft data",
         details: errorMessage,
+        stack: process.env.NODE_ENV === "development" ? errorStack : undefined,
         aircraft: [],
         stats: null,
+        debug: {
+          hasClientId: !!OPENSKY_CLIENT_ID,
+          hasClientSecret: !!OPENSKY_CLIENT_SECRET,
+        },
       },
       { status: 500 },
     );
