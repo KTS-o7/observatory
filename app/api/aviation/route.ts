@@ -3,6 +3,67 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+// Test connectivity to OpenSky servers
+async function testConnectivity(): Promise<{
+  authServer: { reachable: boolean; latency?: number; error?: string };
+  apiServer: { reachable: boolean; latency?: number; error?: string };
+}> {
+  const results = {
+    authServer: { reachable: false } as {
+      reachable: boolean;
+      latency?: number;
+      error?: string;
+    },
+    apiServer: { reachable: false } as {
+      reachable: boolean;
+      latency?: number;
+      error?: string;
+    },
+  };
+
+  // Test auth server
+  try {
+    const start = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    await fetch(
+      "https://auth.opensky-network.org/auth/realms/opensky-network/.well-known/openid-configuration",
+      {
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timeout);
+    results.authServer = { reachable: true, latency: Date.now() - start };
+  } catch (e) {
+    results.authServer = {
+      reachable: false,
+      error: e instanceof Error ? e.message : "Unknown error",
+    };
+  }
+
+  // Test API server
+  try {
+    const start = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    await fetch(
+      "https://opensky-network.org/api/states/all?lamin=0&lamax=1&lomin=0&lomax=1",
+      {
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timeout);
+    results.apiServer = { reachable: true, latency: Date.now() - start };
+  } catch (e) {
+    results.apiServer = {
+      reachable: false,
+      error: e instanceof Error ? e.message : "Unknown error",
+    };
+  }
+
+  return results;
+}
+
 // Timeout helper for fetch requests
 async function fetchWithTimeout(
   url: string,
@@ -515,4 +576,32 @@ export async function GET(request: NextRequest) {
       { status: isTimeout ? 504 : 500 },
     );
   }
+}
+
+// Debug endpoint to test connectivity
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => ({}));
+
+  if (body.action === "test-connectivity") {
+    const connectivity = await testConnectivity();
+    return NextResponse.json({
+      connectivity,
+      env: {
+        hasClientId: !!OPENSKY_CLIENT_ID,
+        hasClientSecret: !!OPENSKY_CLIENT_SECRET,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  if (body.action === "test-token") {
+    const token = await getAccessToken();
+    return NextResponse.json({
+      tokenObtained: !!token,
+      tokenLength: token?.length || 0,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }
