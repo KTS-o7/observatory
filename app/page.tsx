@@ -14,6 +14,7 @@ import CyberThreatFeed from "@/components/CyberThreatFeed";
 import SpaceWeatherPanel from "@/components/SpaceWeatherPanel";
 import InfrastructurePanel from "@/components/InfrastructurePanel";
 import AviationPanel from "@/components/AviationPanel";
+import OsintMetricsPanel from "@/components/OsintMetricsPanel";
 
 import VulnerabilityPanel from "@/components/VulnerabilityPanel";
 import { getApiStatus } from "@/lib/api";
@@ -276,6 +277,7 @@ function OperationsLayout({ useLiveData }: { useLiveData: boolean }) {
   const [selectedAircraftId, setSelectedAircraftId] = useState<string | null>(
     null,
   );
+  const [showMilitaryOnly, setShowMilitaryOnly] = useState(false);
 
   const handleAircraftSelect = useCallback((icao24: string | null) => {
     setSelectedAircraftId(icao24);
@@ -284,6 +286,11 @@ function OperationsLayout({ useLiveData }: { useLiveData: boolean }) {
   const handleRegionChange = useCallback((region: string) => {
     setSelectedRegion(region);
     setSelectedAircraftId(null); // Clear selection when region changes
+  }, []);
+
+  const handleMilitaryFilterChange = useCallback((militaryOnly: boolean) => {
+    setShowMilitaryOnly(militaryOnly);
+    setSelectedAircraftId(null); // Clear selection when filter changes
   }, []);
 
   return (
@@ -299,6 +306,7 @@ function OperationsLayout({ useLiveData }: { useLiveData: boolean }) {
           region={selectedRegion}
           selectedAircraftId={selectedAircraftId}
           onAircraftSelect={handleAircraftSelect}
+          militaryOnly={showMilitaryOnly}
         />
       </div>
 
@@ -311,6 +319,8 @@ function OperationsLayout({ useLiveData }: { useLiveData: boolean }) {
           onRegionChange={handleRegionChange}
           selectedAircraftId={selectedAircraftId}
           onAircraftSelect={handleAircraftSelect}
+          showMilitaryOnly={showMilitaryOnly}
+          onMilitaryFilterChange={handleMilitaryFilterChange}
         />
       </div>
 
@@ -364,38 +374,29 @@ function OsintLayout({ useLiveData }: { useLiveData: boolean }) {
       className="h-full grid grid-cols-12 gap-px bg-divider"
       style={{ gridTemplateRows: "repeat(6, minmax(0, 1fr))" }}
     >
-      {/* Space Weather - top left */}
+      {/* OSINT Metrics Dashboard - top spanning */}
+      <div className="col-span-8 row-span-3 bg-base-850">
+        <OsintMetricsPanel useLiveData={useLiveData} />
+      </div>
+
+      {/* Space Weather - top right */}
       <div className="col-span-4 row-span-3 bg-base-850">
         <SpaceWeatherPanel useLiveData={useLiveData} />
       </div>
 
-      {/* Cyber Threat Feed - top center */}
+      {/* Cyber Threat Feed - bottom left */}
       <div className="col-span-4 row-span-3 bg-base-850">
-        <CyberThreatFeed useLiveData={useLiveData} maxItems={10} />
+        <CyberThreatFeed useLiveData={useLiveData} maxItems={12} />
       </div>
 
-      {/* Vulnerability Feed - top right */}
+      {/* Vulnerability Feed - bottom center */}
       <div className="col-span-4 row-span-3 bg-base-850">
         <VulnerabilityPanel useLiveData={useLiveData} maxItems={10} />
       </div>
 
-      {/* Infrastructure Status - bottom left */}
-      <div className="col-span-4 row-span-3 bg-base-850">
-        <InfrastructurePanel useLiveData={useLiveData} />
-      </div>
-
-      {/* Threat Matrix - bottom center */}
+      {/* Threat Matrix - bottom right */}
       <div className="col-span-4 row-span-3 bg-base-850">
         <ThreatMatrix useLiveData={useLiveData} />
-      </div>
-
-      {/* Global Map for context - bottom right */}
-      <div className="col-span-4 row-span-3 bg-base-850">
-        <GlobalMap
-          showFilters={false}
-          showLegend={false}
-          useLiveData={useLiveData}
-        />
       </div>
     </div>
   );

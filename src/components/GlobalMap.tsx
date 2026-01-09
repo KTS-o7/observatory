@@ -584,6 +584,7 @@ interface GlobalMapProps {
   region?: string;
   selectedAircraftId?: string | null;
   onAircraftSelect?: (icao24: string | null) => void;
+  militaryOnly?: boolean;
 }
 
 export default function GlobalMap({
@@ -596,6 +597,7 @@ export default function GlobalMap({
   region = "europe",
   selectedAircraftId: externalSelectedAircraftId,
   onAircraftSelect,
+  militaryOnly = false,
 }: GlobalMapProps) {
   // Fetch live disaster markers (for events mode)
   const {
@@ -663,7 +665,7 @@ export default function GlobalMap({
       setAircraftLoading(true);
       try {
         const response = await fetch(
-          `/api/aviation?region=${region}&limit=100`,
+          `/api/aviation?region=${region}&limit=500&military=${militaryOnly}`,
           {
             signal: controller.signal,
           },
@@ -691,7 +693,7 @@ export default function GlobalMap({
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [mode, useLiveData, region]);
+  }, [mode, useLiveData, region, militaryOnly]);
 
   // Fallback aircraft data when API is slow/unavailable
   function getFallbackAircraft(): Aircraft[] {
@@ -881,6 +883,28 @@ export default function GlobalMap({
       return next;
     });
   }, []);
+
+  // Auto-center on selected aircraft when selection changes from external source
+  useEffect(() => {
+    if (selectedAircraftId && aircraft.length > 0) {
+      const selectedAircraft = aircraft.find(
+        (ac) => ac.icao24 === selectedAircraftId,
+      );
+      if (
+        selectedAircraft &&
+        selectedAircraft.position.lat &&
+        selectedAircraft.position.lng
+      ) {
+        setPosition({
+          coordinates: [
+            selectedAircraft.position.lng,
+            selectedAircraft.position.lat,
+          ],
+          zoom: Math.max(position.zoom, 3), // Zoom in at least to level 3
+        });
+      }
+    }
+  }, [selectedAircraftId, aircraft]);
 
   // Handle zoom
   const handleMoveEnd = useCallback(

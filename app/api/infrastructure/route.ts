@@ -4,6 +4,38 @@
 import { NextResponse } from "next/server";
 
 // ===========================================
+// Timeout Utility
+// ===========================================
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit & { next?: { revalidate?: number } } = {},
+  timeoutMs: number = 5000,
+): Promise<Response | null> {
+  try {
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), timeoutMs);
+    });
+
+    const fetchPromise = fetch(url, options).catch((error) => {
+      console.warn(`Fetch error for ${url}:`, error?.message || error);
+      return null;
+    });
+
+    const result = await Promise.race([fetchPromise, timeoutPromise]);
+
+    if (result === null) {
+      console.warn(`Fetch timeout or error for ${url}`);
+    }
+
+    return result;
+  } catch (error) {
+    console.warn(`Fetch failed for ${url}:`, error);
+    return null;
+  }
+}
+
+// ===========================================
 // Types
 // ===========================================
 
@@ -23,7 +55,12 @@ interface InternetOutage {
 interface ServiceStatus {
   name: string;
   url: string;
-  status: "operational" | "degraded" | "partial_outage" | "major_outage" | "unknown";
+  status:
+    | "operational"
+    | "degraded"
+    | "partial_outage"
+    | "major_outage"
+    | "unknown";
   lastChecked: string;
   incidents: Array<{
     id: string;
@@ -85,7 +122,10 @@ interface StatusPageResponse {
 // ===========================================
 
 const STATUS_PAGES = [
-  { name: "Cloudflare", url: "https://www.cloudflarestatus.com/api/v2/status.json" },
+  {
+    name: "Cloudflare",
+    url: "https://www.cloudflarestatus.com/api/v2/status.json",
+  },
   { name: "GitHub", url: "https://www.githubstatus.com/api/v2/status.json" },
   { name: "Fastly", url: "https://status.fastly.com/api/v2/status.json" },
   { name: "Discord", url: "https://discordstatus.com/api/v2/status.json" },
@@ -101,16 +141,19 @@ async function fetchIODAOutages(): Promise<InternetOutage[]> {
     const now = Math.floor(Date.now() / 1000);
     const oneDayAgo = now - 24 * 60 * 60;
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://api.ioda.inetintel.cc.gatech.edu/v2/alerts?from=${oneDayAgo}&until=${now}&limit=50`,
       {
         headers: { Accept: "application/json" },
-        next: { revalidate: 300 }, // Cache for 5 minutes
-      }
+        next: { revalidate: 300 },
+      },
+      8000,
     );
 
-    if (!response.ok) {
-      console.error("IODA error:", response.status);
+    if (!response || !response.ok) {
+      if (response) {
+        console.error("IODA error:", response.status);
+      }
       return [];
     }
 
@@ -118,7 +161,9 @@ async function fetchIODAOutages(): Promise<InternetOutage[]> {
     const alerts: IODAAlert[] = data.data || [];
 
     return alerts.map((alert) => {
-      const duration = alert.time ? Math.floor((Date.now() / 1000 - alert.time) / 60) : 0;
+      const duration = alert.time
+        ? Math.floor((Date.now() / 1000 - alert.time) / 60)
+        : 0;
 
       let level: InternetOutage["level"] = "normal";
       if (alert.level === "critical" || alert.value < 0.3) {
@@ -148,15 +193,19 @@ async function fetchIODAOutages(): Promise<InternetOutage[]> {
 
 async function fetchServiceStatus(
   name: string,
-  statusUrl: string
+  statusUrl: string,
 ): Promise<ServiceStatus> {
   try {
-    const response = await fetch(statusUrl, {
-      headers: { Accept: "application/json" },
-      next: { revalidate: 300 }, // Cache for 1 minute
-    });
+    const response = await fetchWithTimeout(
+      statusUrl,
+      {
+        headers: { Accept: "application/json" },
+        next: { revalidate: 300 },
+      },
+      5000,
+    );
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       return {
         name,
         url: statusUrl,
@@ -211,7 +260,9 @@ async function fetchServiceStatus(
 
 async function fetchAllServiceStatus(): Promise<ServiceStatus[]> {
   const results = await Promise.all(
-    STATUS_PAGES.map((service) => fetchServiceStatus(service.name, service.url))
+    STATUS_PAGES.map((service) =>
+      fetchServiceStatus(service.name, service.url),
+    ),
   );
   return results;
 }
@@ -222,7 +273,7 @@ async function fetchAllServiceStatus(): Promise<ServiceStatus[]> {
 
 function generateAlerts(
   outages: InternetOutage[],
-  services: ServiceStatus[]
+  services: ServiceStatus[],
 ): InfrastructureAlert[] {
   const alerts: InfrastructureAlert[] = [];
 
@@ -239,7 +290,8 @@ function generateAlerts(
       title: `Internet Outage: ${outage.entityName}`,
       description: outage.description,
       affectedEntity: outage.entityName,
-      affectedRegion: outage.entityType === "country" ? outage.entityCode : null,
+      affectedRegion:
+        outage.entityType === "country" ? outage.entityCode : null,
       startTime: outage.startTime,
       source: "IODA",
     });
@@ -267,7 +319,12 @@ function generateAlerts(
   }
 
   // Sort by severity
-  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  const severityOrder: Record<string, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
   alerts.sort((a, b) => {
     const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
     if (severityDiff !== 0) return severityDiff;
@@ -299,7 +356,7 @@ interface InfrastructureStats {
 
 function computeStats(
   outages: InternetOutage[],
-  services: ServiceStatus[]
+  services: ServiceStatus[],
 ): InfrastructureStats {
   const stats: InfrastructureStats = {
     outages: {
@@ -379,7 +436,7 @@ export async function GET() {
         services: [],
         stats: null,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

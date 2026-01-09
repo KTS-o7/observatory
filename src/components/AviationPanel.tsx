@@ -125,6 +125,7 @@ function AircraftRow({ aircraft, isSelected, onClick }: AircraftRowProps) {
       rowRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [isSelected]);
+
   return (
     <div
       ref={rowRef}
@@ -364,6 +365,8 @@ interface AviationPanelProps {
   onRegionChange?: (region: string) => void;
   selectedAircraftId?: string | null;
   onAircraftSelect?: (icao24: string | null) => void;
+  showMilitaryOnly?: boolean;
+  onMilitaryFilterChange?: (militaryOnly: boolean) => void;
 }
 
 export default function AviationPanel({
@@ -375,6 +378,8 @@ export default function AviationPanel({
   onRegionChange,
   selectedAircraftId: externalSelectedId,
   onAircraftSelect,
+  showMilitaryOnly: externalShowMilitaryOnly,
+  onMilitaryFilterChange,
 }: AviationPanelProps) {
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
   const [stats, setStats] = useState<AviationStats>({
@@ -390,13 +395,26 @@ export default function AviationPanel({
   const [internalSelectedId, setInternalSelectedId] = useState<string | null>(
     null,
   );
-  const [showMilitaryOnly, setShowMilitaryOnly] = useState(false);
+  const [internalShowMilitaryOnly, setInternalShowMilitaryOnly] =
+    useState(false);
   const [internalRegion, setInternalRegion] = useState("europe");
 
   // Use external props if provided, otherwise use internal state
   const region = externalRegion !== undefined ? externalRegion : internalRegion;
   const selectedId =
     externalSelectedId !== undefined ? externalSelectedId : internalSelectedId;
+  const showMilitaryOnly =
+    externalShowMilitaryOnly !== undefined
+      ? externalShowMilitaryOnly
+      : internalShowMilitaryOnly;
+
+  const handleMilitaryFilterChange = (value: boolean) => {
+    if (onMilitaryFilterChange) {
+      onMilitaryFilterChange(value);
+    } else {
+      setInternalShowMilitaryOnly(value);
+    }
+  };
 
   const handleRegionChange = (newRegion: string) => {
     if (onRegionChange) {
@@ -536,7 +554,7 @@ export default function AviationPanel({
       {showFilters && (
         <FilterControls
           showMilitaryOnly={showMilitaryOnly}
-          onMilitaryToggle={() => setShowMilitaryOnly(!showMilitaryOnly)}
+          onMilitaryToggle={() => handleMilitaryFilterChange(!showMilitaryOnly)}
           region={region}
           onRegionChange={handleRegionChange}
         />
