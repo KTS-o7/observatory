@@ -1,14 +1,17 @@
 // Server-side API route for fetching aircraft tracking data
-// Uses OpenSky Network API - FREE, authentication optional but recommended for cloud deployments
+// Uses OpenSky Network API with OAuth2 client credentials flow
 
 import { NextRequest, NextResponse } from "next/server";
 
 // Force dynamic rendering - don't call external APIs at build time
 export const dynamic = "force-dynamic";
 
-// OpenSky credentials (optional but recommended for Vercel/cloud deployments)
-const OPENSKY_USERNAME = process.env.OPENSKY_USERNAME;
-const OPENSKY_PASSWORD = process.env.OPENSKY_PASSWORD;
+// OpenSky OAuth2 credentials from environment variables
+const OPENSKY_CLIENT_ID = process.env.OPENSKY_CLIENT_ID;
+const OPENSKY_CLIENT_SECRET = process.env.OPENSKY_CLIENT_SECRET;
+
+// Token cache to avoid requesting new tokens for every API call
+let cachedToken: { token: string; expiresAt: number } | null = null;
 
 // ===========================================
 // Types
@@ -43,6 +46,12 @@ interface AircraftStats {
   military: number;
   highAltitude: number;
   byCountry: Record<string, number>;
+}
+
+interface TokenResponse {
+  access_token: string;
+  expires_in: number;
+  token_type: string;
 }
 
 // Military callsign prefixes
@@ -88,6 +97,58 @@ const MILITARY_PREFIXES = [
   "BAF",
   "RNL",
 ];
+
+// ===========================================
+// OAuth2 Token Management
+// ===========================================
+
+async function getAccessToken(): Promise<string | null> {
+  // Check if we have a valid cached token (with 60 second buffer)
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60000) {
+    return cachedToken.token;
+  }
+
+  // No credentials configured
+  if (!OPENSKY_CLIENT_ID || !OPENSKY_CLIENT_SECRET) {
+    console.log("OpenSky OAuth2 credentials not configured");
+    return null;
+  }
+
+  try {
+    const tokenUrl =
+      "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+
+    const response = await fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: OPENSKY_CLIENT_ID,
+        client_secret: OPENSKY_CLIENT_SECRET,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`Failed to get OpenSky token: ${response.status}`);
+      return null;
+    }
+
+    const data: TokenResponse = await response.json();
+
+    // Cache the token (expires_in is in seconds)
+    cachedToken = {
+      token: data.access_token,
+      expiresAt: Date.now() + data.expires_in * 1000,
+    };
+
+    return data.access_token;
+  } catch (error) {
+    console.error("Error getting OpenSky access token:", error);
+    return null;
+  }
+}
 
 // ===========================================
 // Utility Functions
@@ -218,18 +279,16 @@ export async function GET(request: NextRequest) {
       url += `?${queryString}`;
     }
 
-    // Build headers with optional authentication
+    // Build headers
     const headers: Record<string, string> = {
       Accept: "application/json",
       "User-Agent": "Observatory Dashboard/1.0",
     };
 
-    // Add Basic Auth if credentials are available
-    if (OPENSKY_USERNAME && OPENSKY_PASSWORD) {
-      const credentials = Buffer.from(
-        `${OPENSKY_USERNAME}:${OPENSKY_PASSWORD}`,
-      ).toString("base64");
-      headers["Authorization"] = `Basic ${credentials}`;
+    // Try to get OAuth2 token
+    const accessToken = await getAccessToken();
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
     }
 
     const response = await fetch(url, {
@@ -238,25 +297,25 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
-      // OpenSky might rate limit or block cloud IPs - return gracefully
+      // OpenSky might rate limit or block cloud IPs
       if (response.status === 429) {
         return NextResponse.json(
           {
             error: "Rate limited by OpenSky Network. Try again later.",
             aircraft: [],
             stats: null,
-            hint: "Consider adding OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables for higher rate limits.",
           },
           { status: 429 },
         );
       }
       if (response.status === 401) {
+        // Token might be expired, clear cache
+        cachedToken = null;
         return NextResponse.json(
           {
             error: "OpenSky authentication failed",
             aircraft: [],
             stats: null,
-            hint: "Check your OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables.",
           },
           { status: 401 },
         );
@@ -264,10 +323,9 @@ export async function GET(request: NextRequest) {
       if (response.status === 403) {
         return NextResponse.json(
           {
-            error: "OpenSky blocked request (common for cloud provider IPs)",
+            error: "OpenSky blocked request",
             aircraft: [],
             stats: null,
-            hint: "Add OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables. Register free at https://opensky-network.org/",
           },
           { status: 403 },
         );
@@ -368,7 +426,6 @@ export async function GET(request: NextRequest) {
         details: errorMessage,
         aircraft: [],
         stats: null,
-        hint: "If running on Vercel, add OPENSKY_USERNAME and OPENSKY_PASSWORD environment variables.",
       },
       { status: 500 },
     );
