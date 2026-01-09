@@ -463,18 +463,47 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Aviation API error:", error);
     const isTimeout = error instanceof Error && error.name === "AbortError";
-    const errorMessage = isTimeout
-      ? "Request timed out"
-      : error instanceof Error
-        ? error.message
-        : "Unknown error";
+    const isFetchError =
+      error instanceof Error && error.message === "fetch failed";
+    const isNetworkError =
+      error instanceof Error &&
+      (error.cause instanceof Error ? error.cause.message : "").includes(
+        "ENOTFOUND",
+      );
+
+    let errorType = "unknown";
+    let errorMessage = "Unknown error";
+
+    if (isTimeout) {
+      errorType = "timeout";
+      errorMessage = "Request timed out";
+    } else if (isFetchError || isNetworkError) {
+      errorType = "network";
+      errorMessage = "Network error - could not connect to OpenSky API";
+      // Log the underlying cause for debugging
+      if (error instanceof Error && error.cause) {
+        console.error("Fetch error cause:", error.cause);
+      }
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+
     const errorStack = error instanceof Error ? error.stack : undefined;
+    const errorCause =
+      error instanceof Error && error.cause instanceof Error
+        ? error.cause.message
+        : undefined;
+
     return NextResponse.json(
       {
         error: isTimeout
           ? "OpenSky API request timed out"
-          : "Failed to fetch aircraft data",
+          : isFetchError
+            ? "Could not connect to OpenSky API"
+            : "Failed to fetch aircraft data",
         details: errorMessage,
+        errorType,
+        cause: errorCause,
         stack: process.env.NODE_ENV === "development" ? errorStack : undefined,
         aircraft: [],
         stats: null,
